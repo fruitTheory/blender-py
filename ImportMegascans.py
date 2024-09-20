@@ -9,6 +9,7 @@ print("Hello")
 
 context = bpy.context
 data = bpy.data
+
 objects = data.objects
 materials = data.materials
 images = data.images
@@ -42,22 +43,35 @@ class ImportTextures(Operator):
         bpy.ops.import_scene.custom_textures('INVOKE_DEFAULT')
 
 
-def SetupMesh(mesh, path):
+def SetupMesh(mesh, path, name="default"):
     # Setup path to files and files themselves
     path_dir = path.rsplit("\\", 1)[0] + "\\"
     files = os.listdir(path_dir)
     
-    # Note: Maybe check if material already exists
-    # Get active material or give mesh material
+    # Set the object, mesh, and material names
+    mesh.name = name
+    mesh.data.name = name 
+    mtl_name = name + "_mtl"
     active_mtl = mesh.active_material
+    
+    # If there is no active material, create or append material
     if active_mtl == None:
-        newMat = materials.new("newMat")
-        mesh.data.materials.append(newMat)
-        active_mtl = mesh.active_material
-        
-    print(active_mtl)
-    active_mtl.name = "test"
+        try:
+            # Check if relevant material exists
+            materials[mtl_name]
+        except:
+            # Material doesnt exists
+            newMat = materials.new("newMat")
+            mesh.data.materials.append(newMat)
+            active_mtl = mesh.active_material
+        else:
+            # Material does exists
+            mesh.data.materials.append(materials[mtl_name])
+            active_mtl = mesh.active_material
+
+    active_mtl.name = mtl_name
     active_mtl.use_nodes = True
+    active_mtl.displacement_method = "BOTH"
 
     # Get base node tree and node links
     nodes = active_mtl.node_tree.nodes
@@ -127,7 +141,7 @@ def SetupMesh(mesh, path):
     node_links.new(normal_node.outputs["Normal"], bsdf_node.inputs["Normal"])
     node_links.new(image_dictionary["specular"].outputs["Color"], bsdf_node.inputs["Specular Tint"])
     node_links.new(image_dictionary["roughness"].outputs["Color"], bsdf_node.inputs["Roughness"])
-    node_links.new(image_dictionary["displacement"].outputs["Color"], disp_node.inputs["Normal"])
+    node_links.new(image_dictionary["displacement"].outputs["Color"], disp_node.inputs["Height"])
     node_links.new(disp_node.outputs["Displacement"], output_node.inputs["Displacement"])
 
 
@@ -148,14 +162,33 @@ class ImportFbx(Operator, ImportHelper):
         bpy.ops.import_scene.fbx(filepath=self.filepath)
         new_objects = set(bpy.context.scene.objects) - previous_objects
         new_objects = list(new_objects)
-
+        
+        # Get string name of objects to sort the list 
+        sorted_names = [obj.name for obj in new_objects]
+        sorted_names.sort()
+        
+        # Extract a shortened object name from first item
+        obj_name = sorted_names[0].rsplit("_", 1)[0]
+        obj_name = obj_name.split("Aset_")[-1]
+        
+        # Group objects if more than one
+        if len(new_objects) > 1:
+            empty_obj = bpy.ops.object.add(radius=0.1, location=(0.0, 0.0, 0.0))
+            empty_obj = context.active_object
+            empty_obj.name = obj_name + "_grp"                            
+            for obj in new_objects:
+                obj.parent = empty_obj
+        
+        # Setup the materials for objects
         for x in range(len(new_objects)):
+            # If first obj setup material, else apply previous mtl
             if x == 0:
-                print(new_objects[x])
-                SetupMesh(new_objects[x], self.filepath)
+                SetupMesh(new_objects[x], self.filepath, obj_name)
             else:
-                print(new_objects[x])
-                new_objects[x].data.materials.append(materials["test"])
+                # Append material to obj, set object and mesh name
+                new_objects[x].data.materials.append(materials[obj_name+"_mtl"])
+                new_objects[x].name = sorted_names[x].rsplit("_", 1)[0].split("Aset_")[-1]
+                new_objects[x].data.name = sorted_names[x].rsplit("_", 1)[0].split("Aset_")[-1]
 
         print("My Script Finished: %.4f sec" % (time.time() - time_start))
         return {'FINISHED'}
