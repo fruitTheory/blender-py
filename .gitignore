@@ -1,1 +1,3 @@
 _Backup
+__pycache__
+*.pyc
