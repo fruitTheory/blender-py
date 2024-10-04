@@ -13,8 +13,8 @@ objects = data.objects
 materials = data.materials
 images = data.images
 
-def SetupTextures(directory):
-
+def SetupTextures(directory, triplanar):
+    # Get directory name for mtl name
     mtl_name = directory.rsplit("\\", 2)[-2]
     files = os.listdir(directory)
     
@@ -30,7 +30,6 @@ def SetupTextures(directory):
         print(f"Material: {mtl_name} already exists.")
         return
 
-    # newMat.name = mtl_name
     newMat.use_nodes = True
     newMat.displacement_method = "BOTH"
 
@@ -80,7 +79,7 @@ def SetupTextures(directory):
     
     # Create rest of nodes
     output_node = nodes.new(type="ShaderNodeOutputMaterial")
-    output_node.location = (600, 0)
+    output_node.location = (900, 0)
     bsdf_node = nodes.new(type="ShaderNodeBsdfPrincipled")
     bsdf_node.location = (300, 0)
 
@@ -113,17 +112,53 @@ def SetupTextures(directory):
     check_link(node_links, image_dictionary, "roughness", bsdf_node, "Roughness")
     check_link(node_links, image_dictionary, "opacity", bsdf_node, "Alpha")
 
-    # If normtranslucency create additional BSDF and additional linkage
+    # If translucency exists create additional BSDF and additional linkage
     if "translucency" in image_dictionary.keys():
-        # transparent_bsdf = nodes.new(type="ShaderNodeNormalMap")
-        # translucent_bsdf = nodes.new(type="ShaderNodeNormalMap")
-        # bsdf_mix_trans = nodes.new(type="ShaderNodeMix")
-        # bsdf_mix_main = nodes.new(type="ShaderNodeMix")
-        # Input opacity into translucent bsdf color and bsdf mix trans
-        # And transparent, translucent bsdf's
-        # input that mix trans into mix main
-        # and main mix will go into surface output
-        pass
+        transparent_bsdf = nodes.new(type="ShaderNodeBsdfTransparent")
+        transparent_bsdf.location = (0, -600)
+        translucent_bsdf = nodes.new(type="ShaderNodeBsdfTranslucent")
+        translucent_bsdf.location = (0, -700)
+        bsdf_mix_trans = nodes.new(type="ShaderNodeMixShader")
+        bsdf_mix_trans.location = (300, -600)
+        bsdf_mix_main = nodes.new(type="ShaderNodeMixShader")
+        bsdf_mix_main.location = (600, -600)
+
+        node_links.new(image_dictionary["translucency"].outputs["Color"], translucent_bsdf.inputs["Color"])
+        check_link(node_links, image_dictionary, "opacity", bsdf_mix_trans, "Fac")
+        node_links.new(transparent_bsdf.outputs["BSDF"], bsdf_mix_trans.inputs[1])
+        node_links.new(translucent_bsdf.outputs["BSDF"], bsdf_mix_trans.inputs[2])
+
+        node_links.new(bsdf_node.outputs["BSDF"], bsdf_mix_main.inputs[1])
+        node_links.new(bsdf_mix_trans.outputs["Shader"], bsdf_mix_main.inputs[2])
+        node_links.new(bsdf_mix_main.outputs["Shader"], output_node.inputs["Surface"])
+
+    # If triplanar setup object mapping with box projection, else with UV and no projection
+    if triplanar:
+        texcoord_node = nodes.new(type="ShaderNodeTexCoord")
+        texcoord_node.location = (-1800, -200)
+        mapping_node = nodes.new(type="ShaderNodeMapping")
+        mapping_node.location = (-1600, -200)
+        value_node = nodes.new(type="ShaderNodeValue")
+        value_node.outputs[0].default_value = 1.0
+        value_node.location = (-1900, -600)
+        node_links.new(value_node.outputs["Value"], mapping_node.inputs["Scale"])
+        node_links.new(texcoord_node.outputs["Object"], mapping_node.inputs["Vector"])
+        for node in image_nodes:
+            node_links.new(mapping_node.outputs["Vector"], node.inputs["Vector"])
+            node.projection = "BOX"
+    else:
+        texcoord_node = nodes.new(type="ShaderNodeTexCoord")
+        texcoord_node.location = (-1800, -200)
+        mapping_node = nodes.new(type="ShaderNodeMapping")
+        mapping_node.location = (-1600, -200)
+        value_node = nodes.new(type="ShaderNodeValue")
+        value_node.outputs[0].default_value = 1.0
+        value_node.location = (-1900, -600)
+        node_links.new(value_node.outputs["Value"], mapping_node.inputs["Scale"])
+        node_links.new(texcoord_node.outputs["UV"], mapping_node.inputs["Vector"])
+        for node in image_nodes:
+            node_links.new(mapping_node.outputs["Vector"], node.inputs["Vector"])
+
 
 
 # Check if link can be made, needs nodelink obect, output node, its name, and input node and slot
@@ -141,6 +176,7 @@ class ImportTextures(Operator):
     bl_label = "Select Directory"
 
     directory: bpy.props.StringProperty(subtype="DIR_PATH")
+    triplanar: bpy.props.BoolProperty(name="Triplanar", description="Use Triplanar?")
     
     def invoke(self, context, event):
         # Open file browser
@@ -149,13 +185,13 @@ class ImportTextures(Operator):
 
     def execute(self, context):
         time_start = time.time()
-        SetupTextures(self.directory)
+        SetupTextures(self.directory, self.triplanar)
         print("My Script Finished: %.4f sec" % (time.time() - time_start))
         return {'FINISHED'}
     
     @classmethod
-    def run(cls):
-        bpy.ops.import_scene.custom_textures('INVOKE_DEFAULT')
+    def run(cls, Triplanar=False):
+        bpy.ops.import_scene.custom_textures('INVOKE_DEFAULT', triplanar=Triplanar)
 
 
 def SetupMesh(mesh, path, name="default"):
