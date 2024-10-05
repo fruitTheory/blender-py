@@ -14,4 +14,7 @@ fbx_import = Mega.ImportFbx
 #fbx_import.run()
 
 texture_import = Mega.ImportTextures
-texture_import.run(Triplanar=False)
+#texture_import.run(Triplanar=True)
+
+variant_import = Mega.ImportVariants
+variant_import.run()

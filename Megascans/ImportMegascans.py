@@ -8,15 +8,13 @@ print("Hello")
 
 context = bpy.context
 data = bpy.data
-
 objects = data.objects
 materials = data.materials
 images = data.images
 
-def SetupTextures(directory, triplanar):
+def SetupTextures(directory, files, triplanar=False):
     # Get directory name for mtl name
-    mtl_name = directory.rsplit("\\", 2)[-2]
-    files = os.listdir(directory)
+    mtl_name = directory.rsplit("\\", 2)[-2] + "_mtl"
     
     try:
         # Check if relevant material exists
@@ -185,7 +183,15 @@ class ImportTextures(Operator):
 
     def execute(self, context):
         time_start = time.time()
-        SetupTextures(self.directory, self.triplanar)
+        files = os.listdir(self.directory)
+        SetupTextures(self.directory, files, self.triplanar)
+
+        mtl_name = self.directory.rsplit("\\", 2)[-2] + "_mtl"
+        # Optional design, assign material to active object
+        active_obj = bpy.context.active_object
+        active_obj.data.materials.pop(index=0)
+        active_obj.data.materials.append(bpy.data.materials[mtl_name])
+
         print("My Script Finished: %.4f sec" % (time.time() - time_start))
         return {'FINISHED'}
     
@@ -194,106 +200,80 @@ class ImportTextures(Operator):
         bpy.ops.import_scene.custom_textures('INVOKE_DEFAULT', triplanar=Triplanar)
 
 
-def SetupMesh(mesh, path, name="default"):
-    # Setup path to files and files themselves
-    path_dir = path.rsplit("\\", 1)[0] + "\\"
-    files = os.listdir(path_dir)
+# This class is for plant and variant imports
+class ImportVariants(Operator):
+    """Import directory information"""
+    bl_idname = "import_scene.custom_variants"
+    bl_label = "Select Directory"
+
+    directory: bpy.props.StringProperty(subtype="DIR_PATH")
     
-    # Set the object, mesh, and material names
-    mesh.name = name
-    mesh.data.name = name 
-    mtl_name = name + "_mtl"
-    active_mtl = mesh.active_material
-    
-    # If there is no active material, create or append material
-    if active_mtl == None:
-        try:
-            # Check if relevant material exists
-            materials[mtl_name]
+    def invoke(self, context, event):
+        # Open file browser
+        context.window_manager.fileselect_add(self)
+        return {'RUNNING_MODAL'}
+
+    def execute(self, context):
+        time_start = time.time()
+
+        # Get variant folders and append to list
+        folders = os.listdir(self.directory)
+        var_folders = []
+        for folder in folders:
+            if folder.find("Var") != -1:
+                var_folders.append(folder)
+
+        # Get the difference of objects to get new objects, import objects
+        previous_objects = set(bpy.context.scene.objects)
+        for folder in var_folders:
+            bpy.ops.import_scene.fbx(filepath=self.directory+folder+"\\"+(folder+"_LOD0.fbx"))
+
+        new_objects = set(bpy.context.scene.objects) - previous_objects
+        new_objects = list(new_objects)
+
+        # Remove default material, then remove the slot
+        for object in new_objects:
+            bpy.data.materials.remove(object.active_material)
+            object.data.materials.pop(index=0)
+
+        # Get texture files, store file directory, and parent directory name
+        files = os.listdir(self.directory + "//textures//atlas//")
+        file_directory = self.directory + "//textures//atlas//"
+        parent_name = self.directory.rsplit("\\", 2)[-2]
+
+        # Create a collection if relevant one doesnt exist, else use existing
+        try: 
+            bpy.data.collections[parent_name]
         except:
-            # Material doesnt exists
-            newMat = materials.new("newMat")
-            mesh.data.materials.append(newMat)
-            active_mtl = mesh.active_material
+            collection = bpy.data.collections.new(name=parent_name)
         else:
-            # Material does exists
-            mesh.data.materials.append(materials[mtl_name])
-            active_mtl = mesh.active_material
+            collection = bpy.data.collections[parent_name]
+        
+        default_collection = bpy.context.scene.collection
 
-    active_mtl.name = mtl_name
-    active_mtl.use_nodes = True
-    active_mtl.displacement_method = "BOTH"
+        # Unlink from dedfault collection and link with relevant one
+        for object in new_objects:
+            default_collection.objects.unlink(object)
+            collection.objects.link(object) 
 
-    # Get base node tree and node links
-    nodes = active_mtl.node_tree.nodes
-    nodes.clear()
-    node_links = active_mtl.node_tree.links
+        # link collection children to scene context
+        bpy.context.scene.collection.children.link(collection)
+
+        SetupTextures(file_directory, files)
+
+        # Try assigning materials
+        try:
+            for object in new_objects:
+                object.data.materials.append(materials[parent_name + "_mtl"])
+        except:
+            print(f"Material {parent_name}_mtl is not found.")
+
+        print("My Script Finished: %.4f sec" % (time.time() - time_start))
+        return {'FINISHED'}
     
-    # Containers for file types and full names
-    file_type = []
-    file_full = []
-    
-    # Filter for type of file - "Albedo, Normal, etc."
-    for file in files:
-        if file.endswith(".jpg") or file.endswith(".exr"):
-            file_full.append(file)
-            file = file.rsplit("_", 1)[-1]
-            file = file.split(".")[0]
-            if not file.find("LOD"): file = "normal"
-            file_type.append(file)
-    
-    # Containers for image node objects and dict for easier access
-    image_nodes = []
-    image_dictionary = {}
-    
-    # Creating the image nodes based on textures found
-    for x in range(len(file_type)):
-        image_node = nodes.new(type="ShaderNodeTexImage")
-        image_nodes.append(image_node)
-        image_dictionary[file_type[x].lower()] = image_node
-        
-        image_node.name = file_type[x]
-        image_node.location = ((-300 * x), 300)
-        image_node.image = images.load(filepath=path_dir+file_full[x], check_existing=True)
-        
-        # Color management for non-colored images
-        if file_type[x] not in ("Albedo", "Displacement", "Specular", "Translucency"):
-            image_node.image.colorspace_settings.name = "Non-Color"
-        
-        # In case of AO map
-        if file_type[x].lower() in ("ao"):
-            multiply_node = nodes.new(type="ShaderNodeMix")
-            multiply_node.data_type = "RGBA"
-            multiply_node.blend_type = "MULTIPLY"
-            multiply_node.clamp_result = True
-            multiply_node.location = (0, -300)
-            multiply_node.inputs[0].default_value = 1
-    
-    # Create rest of nodes
-    output_node = nodes.new(type="ShaderNodeOutputMaterial")
-    output_node.location = (600, 0)
-    bsdf_node = nodes.new(type="ShaderNodeBsdfPrincipled")
-    bsdf_node.location = (300, 0)
-    disp_node = nodes.new(type="ShaderNodeDisplacement")
-    disp_node.location = (-300, -300)
-    normal_node = nodes.new(type="ShaderNodeNormalMap")
-    normal_node.location = (-600, -300)
-    
-    # Making connections
-    if "ao" in image_dictionary.keys():
-        node_links.new(image_dictionary["albedo"].outputs["Color"], multiply_node.inputs["A"])
-        node_links.new(image_dictionary["ao"].outputs["Color"], multiply_node.inputs["B"])
-        node_links.new(multiply_node.outputs["Result"], bsdf_node.inputs["Base Color"])
-    else:
-        node_links.new(image_dictionary["albedo"].outputs["Color"], bsdf_node.inputs["Base Color"])
-        
-    node_links.new(bsdf_node.outputs["BSDF"], output_node.inputs["Surface"])
-    node_links.new(image_dictionary["normal"].outputs["Color"], normal_node.inputs["Color"])
-    node_links.new(normal_node.outputs["Normal"], bsdf_node.inputs["Normal"])
-    node_links.new(image_dictionary["specular"].outputs["Color"], bsdf_node.inputs["Specular Tint"])
-    node_links.new(image_dictionary["roughness"].outputs["Color"], bsdf_node.inputs["Roughness"])
-    node_links.new(image_dictionary["displacement"].outputs["Color"], disp_node.inputs["Height"])
-    node_links.new(disp_node.outputs["Displacement"], output_node.inputs["Displacement"])
+    @classmethod
+    def run(cls):
+        bpy.ops.import_scene.custom_variants('INVOKE_DEFAULT')
 
 
 # This class is a custom file operator
@@ -309,6 +289,8 @@ class ImportFbx(Operator, ImportHelper):
 
     def execute(self, context):
         time_start = time.time()
+
+        # Get any newly imported objects
         previous_objects = set(bpy.context.scene.objects)
         bpy.ops.import_scene.fbx(filepath=self.filepath)
         new_objects = set(bpy.context.scene.objects) - previous_objects
@@ -330,16 +312,19 @@ class ImportFbx(Operator, ImportHelper):
             for obj in new_objects:
                 obj.parent = empty_obj
         
-        # Setup the materials for objects
-        for x in range(len(new_objects)):
-            # If first obj setup material, else apply previous mtl
-            if x == 0:
-                SetupMesh(new_objects[x], self.filepath, obj_name)
-            else:
-                # Append material to obj, set object and mesh name
-                new_objects[x].data.materials.append(materials[obj_name+"_mtl"])
-                new_objects[x].name = sorted_names[x].rsplit("_", 1)[0].split("Aset_")[-1]
-                new_objects[x].data.name = sorted_names[x].rsplit("_", 1)[0].split("Aset_")[-1]
+        # Store directory path, files, and mtl name
+        directory = self.filepath.rsplit("\\", 1)[0] + "\\"
+        files = os.listdir(directory)
+        mtl_name = directory.rsplit("\\", 2)[-2] + "_mtl"
+  
+        SetupTextures(directory, files)
+
+        # Try assigning materials
+        try:
+            for object in new_objects:
+                object.data.materials.append(materials[mtl_name])
+        except:
+            print(f"Material {mtl_name} is not found.")
 
         print("My Script Finished: %.4f sec" % (time.time() - time_start))
         return {'FINISHED'}
@@ -353,17 +338,16 @@ class ImportFbx(Operator, ImportHelper):
 def register():
     bpy.utils.register_class(ImportFbx)
     bpy.utils.register_class(ImportTextures)
+    bpy.utils.register_class(ImportVariants)
 
 def unregister():
     bpy.utils.unregister_class(ImportFbx)
     bpy.utils.register_class(ImportTextures)
+    bpy.utils.register_class(ImportVariants)
 
 # Add the typical block to avoid execution on import
 if __name__ == "__main__":
     register()
 
-#mapping_node = nodes.new(type="ShaderNodeMapping")
-#texcoord_node = nodes.new(type="ShaderNodeTexCoord")
-#node_dict.update({"MappingNode":mapping_node, "TexCoordNode":texcoord_node})
 
 print("Goodbye")
