@@ -15,7 +15,6 @@ images = data.images
 def SetupTextures(directory, files, triplanar=False):
     # Get directory name for mtl name
     mtl_name = directory.rsplit("\\", 2)[-2] + "_mtl"
-    
     try:
         # Check if relevant material exists
         materials[mtl_name]
@@ -130,7 +129,7 @@ def SetupTextures(directory, files, triplanar=False):
         node_links.new(bsdf_mix_trans.outputs["Shader"], bsdf_mix_main.inputs[2])
         node_links.new(bsdf_mix_main.outputs["Shader"], output_node.inputs["Surface"])
 
-    # If triplanar setup object mapping with box projection, else with UV and no projection
+    # If triplanar setup object mapping with box projection, else setup with UV and no projections
     if triplanar:
         texcoord_node = nodes.new(type="ShaderNodeTexCoord")
         texcoord_node.location = (-1800, -200)
@@ -159,7 +158,7 @@ def SetupTextures(directory, files, triplanar=False):
 
 
 
-# Check if link can be made, needs nodelink obect, output node, its name, and input node and slot
+# Check if link can be made, needs nodelink obect, output node, name, input node, and input type
 def check_link(node_links, node_out, node_name, node_in, in_type):
     try:
         node_links.new(node_out[node_name].outputs["Color"], node_in.inputs[in_type])
@@ -167,9 +166,9 @@ def check_link(node_links, node_out, node_name, node_in, in_type):
         pass
 
 
-# This class is a custom directory operator
+# Class to import directory containing textures
 class ImportTextures(Operator):
-    """Import directory information"""
+    """Import texture information"""
     bl_idname = "import_scene.custom_textures"
     bl_label = "Select Directory"
 
@@ -200,9 +199,9 @@ class ImportTextures(Operator):
         bpy.ops.import_scene.custom_textures('INVOKE_DEFAULT', triplanar=Triplanar)
 
 
-# This class is for plant and variant imports
+# Class to import plant and variant directories
 class ImportVariants(Operator):
-    """Import directory information"""
+    """Import variant information"""
     bl_idname = "import_scene.custom_variants"
     bl_label = "Select Directory"
 
@@ -276,7 +275,7 @@ class ImportVariants(Operator):
         bpy.ops.import_scene.custom_variants('INVOKE_DEFAULT')
 
 
-# This class is a custom file operator
+# Class to import fbx with directory containing textures
 class ImportFbx(Operator, ImportHelper):
     """Import Fbx information"""
     bl_idname = "import_scene.custom_fbx"
@@ -332,7 +331,6 @@ class ImportFbx(Operator, ImportHelper):
     @classmethod
     def run(cls):
         bpy.ops.import_scene.custom_fbx('INVOKE_DEFAULT')
-
 
 
 def register():
