@@ -90,7 +90,7 @@ def SetupTextures(directory, files, triplanar=False):
         node_links.new(disp_node.outputs["Displacement"], output_node.inputs["Displacement"])
         node_links.new(image_dictionary["displacement"].outputs["Color"], disp_node.inputs["Height"])
 
-    # Check if theres an ao node to multiply with albedo
+    # If ao node then multiply with albedo
     if "ao" in image_dictionary.keys():
         node_links.new(image_dictionary["albedo"].outputs["Color"], multiply_node.inputs["A"])
         node_links.new(image_dictionary["ao"].outputs["Color"], multiply_node.inputs["B"])
@@ -105,6 +105,7 @@ def SetupTextures(directory, files, triplanar=False):
         node_links.new(image_dictionary["normal"].outputs["Color"], normal_node.inputs["Color"])
         node_links.new(normal_node.outputs["Normal"], bsdf_node.inputs["Normal"])
 
+    # Check if these common texture nodes exists
     check_link(node_links, image_dictionary, "specular", bsdf_node, "Specular Tint")
     check_link(node_links, image_dictionary, "roughness", bsdf_node, "Roughness")
     check_link(node_links, image_dictionary, "opacity", bsdf_node, "Alpha")
@@ -250,12 +251,12 @@ class ImportVariants(Operator):
         
         default_collection = bpy.context.scene.collection
 
-        # Unlink from dedfault collection and link with relevant one
+        # Unlink from default collection and link with relevant one
         for object in new_objects:
             default_collection.objects.unlink(object)
             collection.objects.link(object) 
 
-        # link collection children to scene context
+        # Link collection children to scene context
         bpy.context.scene.collection.children.link(collection)
 
         SetupTextures(file_directory, files)
@@ -343,7 +344,7 @@ def unregister():
     bpy.utils.register_class(ImportTextures)
     bpy.utils.register_class(ImportVariants)
 
-# Add the typical block to avoid execution on import
+# Avoid execution on import
 if __name__ == "__main__":
     register()
 
