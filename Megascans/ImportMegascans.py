@@ -47,6 +47,11 @@ def SetupTextures(directory, files, triplanar=False):
             file = file.split(".")[0]
             file_type.append(file)
     
+    # Cheap check for geo Normal map
+    for x in range(len(file_type)):
+        if "LOD" in file_type[x]:
+            file_type[x] = "Normal"
+
     # Containers for image node objects and dict for easier access
     image_nodes = []
     image_dictionary = {}
@@ -189,7 +194,10 @@ class ImportTextures(Operator):
         mtl_name = self.directory.rsplit("\\", 2)[-2] + "_mtl"
         # Optional design, assign material to active object
         active_obj = bpy.context.active_object
-        active_obj.data.materials.pop(index=0)
+        try:
+            active_obj.data.materials.pop(index=0)
+        except:
+            print("Warning: Material slot empty.")
         active_obj.data.materials.append(bpy.data.materials[mtl_name])
 
         print("My Script Finished: %.4f sec" % (time.time() - time_start))
@@ -249,15 +257,20 @@ class ImportVariants(Operator):
         else:
             collection = bpy.data.collections[parent_name]
         
-        default_collection = bpy.context.scene.collection
+        # Get active LayerCollection and from that the core Collection
+        active_layer_collection = bpy.context.view_layer.active_layer_collection
+        default_collection = active_layer_collection.collection
 
         # Unlink from default collection and link with relevant one
         for object in new_objects:
             default_collection.objects.unlink(object)
             collection.objects.link(object) 
 
-        # Link collection children to scene context
-        bpy.context.scene.collection.children.link(collection)
+        try:
+            # Link collection children to scene context
+            bpy.context.scene.collection.children.link(collection)
+        except:
+            print("Already in collection")
 
         SetupTextures(file_directory, files)
 
@@ -319,9 +332,23 @@ class ImportFbx(Operator, ImportHelper):
   
         SetupTextures(directory, files)
 
+        # Check the active collection and if not default then unlink and relink
+        active_layer_collection = bpy.context.view_layer.active_layer_collection
+        active_collection = active_layer_collection.collection
+        scene_collection = bpy.context.scene.collection
+        for object in new_objects:
+            if scene_collection != active_collection:
+                active_collection.objects.unlink(object)
+                scene_collection.objects.link(object)
+
         # Try assigning materials
         try:
             for object in new_objects:
+                try:
+                    # Pop default mtl before appending mtl
+                    object.data.materials.pop(index=0)
+                except:
+                    continue
                 object.data.materials.append(materials[mtl_name])
         except:
             print(f"Material {mtl_name} is not found.")

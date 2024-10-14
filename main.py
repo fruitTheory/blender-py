@@ -13,8 +13,9 @@ Mega.register()
 fbx_import = Mega.ImportFbx
 #fbx_import.run()
 
+# Note: Issue with pop() if slots empty, also may not be good to totally delete existing material
 texture_import = Mega.ImportTextures
-#texture_import.run(Triplanar=True)
+texture_import.run(Triplanar=True)
 
-variant_import = Mega.ImportVariants
+#variant_import = Mega.ImportVariants
 variant_import.run()
